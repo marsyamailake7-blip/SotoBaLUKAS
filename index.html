@@ -157,23 +157,22 @@
     .adm-alert-ok { background: #e8f5e9; border: 1px solid #a5d6a7; color: #2e7d32; }
     .adm-alert-err { background: #ffebee; border: 1px solid #ef9a9a; color: #c62828; }
 
-    .adm-btn-export {
-      background: rgba(255,255,255,.15); color: #fff; border: 1px solid rgba(255,255,255,.4);
-      padding: 6px 12px; border-radius: 6px; font-size: .78rem; font-weight: 600; cursor: pointer;
-    }
-    .adm-btn-export:hover { background: rgba(255,255,255,.28); }
-    .adm-btn-import {
+    .adm-btn-save {
       background: var(--gold); color: var(--red-dark); border: none;
-      padding: 6px 12px; border-radius: 6px; font-size: .78rem; font-weight: 700; cursor: pointer;
-      display: inline-flex; align-items: center; gap: 4px;
+      padding: 6px 14px; border-radius: 6px; font-size: .82rem; font-weight: 700; cursor: pointer;
+      box-shadow: 0 2px 6px rgba(0,0,0,.15); transition: opacity .15s, transform .15s;
     }
-    .adm-btn-import:hover { opacity: .88; }
+    .adm-btn-save:hover { opacity: .88; transform: translateY(-1px); }
     .info-banner {
-      background: #fff8e1; border: 1px solid #ffe082; border-radius: 9px;
-      padding: 11px 15px; margin-bottom: 18px; font-size: .82rem; color: #5d4037;
+      background: #e8f5e9; border: 1px solid #a5d6a7; border-radius: 9px;
+      padding: 11px 15px; margin-bottom: 18px; font-size: .82rem; color: #1b5e20;
       display: flex; align-items: flex-start; gap: 10px;
     }
-    .info-banner b { display: block; margin-bottom: 3px; color: #3e2723; }
+    .info-banner b { display: block; margin-bottom: 3px; color: #1b5e20; }
+    @media(max-width:680px){
+      .adm-topbar{ flex-wrap:wrap; height:auto; padding:10px 14px; gap:8px; }
+      .adm-topbar-right{ flex-wrap:wrap; gap:6px; }
+    }
     /* PENGATURAN GRID */
     .set-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
     @media(max-width: 600px) { .set-grid, .f-row { grid-template-columns: 1fr; } }
@@ -330,11 +329,7 @@
         <button class="adm-tab" onclick="admTab('setting',this)">⚙️ Pengaturan</button>
       </div>
       <button class="adm-btn-lihat" onclick="closeAdmin()">👁️ Lihat Toko</button>
-      <button class="adm-btn-export" onclick="exportData()" title="Export semua data + foto ke file .json">📤 Export</button>
-      <label class="adm-btn-import" title="Import data dari file .json (pindah device)">
-        📥 Import
-        <input type="file" accept=".json" style="display:none" onchange="importData(this)">
-      </label>
+      <button class="adm-btn-save" onclick="simpanFileHTML()" title="Download file HTML baru yang sudah berisi semua data & foto">💾 Simpan File HTML</button>
       <button class="adm-btn-logout" onclick="doLogout()">🚪 Logout</button>
     </div>
   </div>
@@ -347,11 +342,12 @@
     <!-- ── TAB MENU ── -->
     <div id="admMenu" class="adm-sec show">
       <div class="info-banner">
-        <span style="font-size:1.4rem">💡</span>
+        <span style="font-size:1.4rem">✅</span>
         <div>
-          <b>Cara menyinkronkan foto ke device/browser lain:</b>
-          Klik <b>📤 Export</b> di atas untuk menyimpan semua data + foto ke file <code>.json</code>.
-          Lalu di device lain, klik <b>📥 Import</b> dan pilih file tersebut. Semua menu dan foto akan langsung muncul.
+          <b>Cara kerja sistem baru — sangat mudah!</b>
+          Setelah upload foto atau edit menu, klik <b>💾 Simpan File HTML</b> di atas.
+          File <code>SBL_Final.html</code> baru akan otomatis ter-download — sudah berisi semua menu, pengaturan, dan foto.
+          Tinggal upload file itu ke GitHub. Buka di device manapun, foto langsung muncul! 🎉
         </div>
       </div>
       <div class="adm-stats" id="admStats"></div>
@@ -573,74 +569,78 @@ const DEFAULT_SETTING = {
 const DEFAULT_ADMIN = { user:'admin', pass:'admin123' };
 
 // ═══════════════════════════════════════
-// LOAD / SAVE localStorage
+// PENYIMPANAN — semua data & foto hidup
+// di dalam variabel JS di file ini.
+// Tombol "Simpan File HTML" men-download
+// file baru yang sudah berisi semua data.
 // ═══════════════════════════════════════
-function loadMenu()    { try { return JSON.parse(localStorage.getItem('sbl_menu'))    || DEFAULT_MENU.map(m=>({...m})); } catch(e){ return DEFAULT_MENU.map(m=>({...m})); } }
-function saveMenu(d)   { localStorage.setItem('sbl_menu', JSON.stringify(d)); }
-function loadSetting() { try { return Object.assign({}, DEFAULT_SETTING, JSON.parse(localStorage.getItem('sbl_setting'))); } catch(e){ return {...DEFAULT_SETTING}; } }
-function saveSetting(d){ localStorage.setItem('sbl_setting', JSON.stringify(d)); }
-function loadAdmin()   { try { return Object.assign({}, DEFAULT_ADMIN, JSON.parse(localStorage.getItem('sbl_admin'))); } catch(e){ return {...DEFAULT_ADMIN}; } }
-function saveAdmin(d)  { localStorage.setItem('sbl_admin', JSON.stringify(d)); }
+
+// ── Data live (diisi saat inisialisasi) ──
+let _menu    = null;
+let _setting = null;
+let _admin   = null;
+let fotoCache = {};   // { id: "data:image/...;base64,..." }
+
+function loadMenu()    { return _menu    ? JSON.parse(JSON.stringify(_menu))    : DEFAULT_MENU.map(m=>({...m})); }
+function saveMenu(d)   { _menu = JSON.parse(JSON.stringify(d)); }
+function loadSetting() { return _setting ? Object.assign({}, DEFAULT_SETTING, _setting) : {...DEFAULT_SETTING}; }
+function saveSetting(d){ _setting = {...d}; }
+function loadAdmin()   { return _admin   ? Object.assign({}, DEFAULT_ADMIN, _admin)   : {...DEFAULT_ADMIN}; }
+function saveAdmin(d)  { _admin = {...d}; }
+
+function saveFoto(id, dataURL)  { fotoCache[id] = dataURL; }
+function deleteFoto(id)         { delete fotoCache[id]; }
+
+async function loadAllFotos()   { /* foto sudah ada di fotoCache dari EMBEDDED_DATA */ }
 
 // ═══════════════════════════════════════
-// FOTO — disimpan di localStorage agar
-// bisa dibawa ke device/browser lain
-// via fitur Export/Import
+// SIMPAN FILE HTML  ← FITUR UTAMA
+// Mengambil source HTML halaman ini,
+// mengganti blok EMBEDDED_DATA dengan
+// data terbaru, lalu download sebagai
+// file .html baru yang sudah lengkap.
 // ═══════════════════════════════════════
-function loadFotos()   { try { return JSON.parse(localStorage.getItem('sbl_fotos')) || {}; } catch(e){ return {}; } }
-function saveFotos(d)  { try { localStorage.setItem('sbl_fotos', JSON.stringify(d)); } catch(e) { alert('⚠️ Storage penuh! Coba kompres ukuran foto terlebih dahulu.'); } }
-function saveFoto(id, dataURL) {
-  const all = loadFotos(); all[id] = dataURL; saveFotos(all);
-}
-function deleteFoto(id) {
-  const all = loadFotos(); delete all[id]; saveFotos(all);
-}
+function simpanFileHTML() {
+  const menu    = loadMenu();
+  const setting = loadSetting();
+  const admin   = loadAdmin();
+  const fotos   = {...fotoCache};
 
-// Cache foto di memori
-let fotoCache = {};
+  // Ambil source HTML asli halaman ini
+  const src = document.documentElement.outerHTML;
 
-async function loadAllFotos() {
-  fotoCache = loadFotos();
-}
+  // Bangun blok data baru
+  const newBlock =
+    `/* EMBEDDED_DATA:START */\n` +
+    `_menu    = ${JSON.stringify(menu)};\n` +
+    `_setting = ${JSON.stringify(setting)};\n` +
+    `_admin   = ${JSON.stringify(admin)};\n` +
+    `fotoCache= ${JSON.stringify(fotos)};\n` +
+    `/* EMBEDDED_DATA:END */`;
 
-// ─── EXPORT semua data ───────────────────
-function exportData() {
-  const payload = {
-    v: 1,
-    menu:    loadMenu(),
-    setting: loadSetting(),
-    fotos:   loadFotos(),
-  };
-  const blob = new Blob([JSON.stringify(payload)], {type:'application/json'});
+  // Ganti blok lama (atau sisipkan sebelum inisialisasi jika belum ada)
+  let result;
+  if (src.includes('/* EMBEDDED_DATA:START */')) {
+    result = src.replace(
+      /\/\* EMBEDDED_DATA:START \*\/[\s\S]*?\/\* EMBEDDED_DATA:END \*\//,
+      newBlock
+    );
+  } else {
+    // Pertama kali — sisipkan sebelum komentar INISIALISASI
+    result = src.replace(
+      '// ═══════════════════════════════════════\n// INISIALISASI',
+      newBlock + '\n\n// ═══════════════════════════════════════\n// INISIALISASI'
+    );
+  }
+
+  const blob = new Blob([result], {type:'text/html;charset=utf-8'});
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement('a');
-  a.href = url; a.download = 'sbl_backup_' + new Date().toISOString().slice(0,10) + '.json';
-  a.click(); URL.revokeObjectURL(url);
-  showAdmAlert('✅ Data berhasil di-export! Simpan file .json ini.', 'ok');
-}
-
-// ─── IMPORT data ────────────────────────
-function importData(input) {
-  const file = input.files[0]; if (!file) return;
-  const reader = new FileReader();
-  reader.onload = e => {
-    try {
-      const p = JSON.parse(e.target.result);
-      if (!p.menu || !p.setting) throw new Error('Format tidak valid');
-      if (!confirm(`Import data dari file:\n• ${p.menu.length} menu\n• ${Object.keys(p.fotos||{}).length} foto\n\nData yang ada sekarang akan digantikan. Lanjutkan?`)) return;
-      saveMenu(p.menu);
-      saveSetting(p.setting);
-      if (p.fotos) saveFotos(p.fotos);
-      fotoCache = p.fotos || {};
-      renderAdminMenu();
-      renderCustomer();
-      showAdmAlert('✅ Data berhasil di-import!', 'ok');
-    } catch(err) {
-      showAdmAlert('❌ File import tidak valid: ' + err.message, 'err');
-    }
-    input.value = '';
-  };
-  reader.readAsText(file);
+  a.href = url;
+  a.download = 'SBL_Final.html';
+  a.click();
+  URL.revokeObjectURL(url);
+  showAdmAlert('✅ File HTML berhasil disimpan! Upload file ini ke GitHub.', 'ok');
 }
 
 // ═══════════════════════════════════════
@@ -741,17 +741,34 @@ function admGantiFoto(id) {
   document.getElementById('admFotoInput-' + id).click();
 }
 
+// Kompres gambar sebelum disimpan agar file HTML tidak terlalu besar
+function kompresGambar(file, maxW, maxH, quality, callback) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    const img = new Image();
+    img.onload = () => {
+      let w = img.width, h = img.height;
+      if (w > maxW) { h = Math.round(h * maxW / w); w = maxW; }
+      if (h > maxH) { w = Math.round(w * maxH / h); h = maxH; }
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      callback(canvas.toDataURL('image/jpeg', quality));
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
 function admUploadFoto(e, id) {
   const file = e.target.files[0];
   if (!file) return;
-  const reader = new FileReader();
-  reader.onload = ev => {
-    fotoCache[id] = ev.target.result;
-    saveFoto(id, ev.target.result);
+  kompresGambar(file, 800, 600, 0.82, dataURL => {
+    fotoCache[id] = dataURL;
+    saveFoto(id, dataURL);
     renderAdminMenu();
-    showAdmAlert('✅ Foto menu berhasil disimpan!', 'ok');
-  };
-  reader.readAsDataURL(file);
+    showAdmAlert('✅ Foto berhasil disimpan! Jangan lupa klik 💾 Simpan File HTML.', 'ok');
+  });
 }
 
 // ── MODAL TAMBAH/EDIT ──
@@ -778,13 +795,11 @@ function closeModalMenu() {
 }
 function previewModalFoto(input) {
   if (input.files && input.files[0]) {
-    const reader = new FileReader();
-    reader.onload = e => {
-      modalFotoData = e.target.result;
+    kompresGambar(input.files[0], 800, 600, 0.82, dataURL => {
+      modalFotoData = dataURL;
       document.getElementById('mFotoPreview').innerHTML =
-        `<img src="${e.target.result}" style="height:65px;border-radius:6px;margin-top:6px;">`;
-    };
-    reader.readAsDataURL(input.files[0]);
+        `<img src="${dataURL}" style="height:65px;border-radius:6px;margin-top:6px;">`;
+    });
   }
 }
 
