@@ -157,6 +157,23 @@
     .adm-alert-ok { background: #e8f5e9; border: 1px solid #a5d6a7; color: #2e7d32; }
     .adm-alert-err { background: #ffebee; border: 1px solid #ef9a9a; color: #c62828; }
 
+    .adm-btn-export {
+      background: rgba(255,255,255,.15); color: #fff; border: 1px solid rgba(255,255,255,.4);
+      padding: 6px 12px; border-radius: 6px; font-size: .78rem; font-weight: 600; cursor: pointer;
+    }
+    .adm-btn-export:hover { background: rgba(255,255,255,.28); }
+    .adm-btn-import {
+      background: var(--gold); color: var(--red-dark); border: none;
+      padding: 6px 12px; border-radius: 6px; font-size: .78rem; font-weight: 700; cursor: pointer;
+      display: inline-flex; align-items: center; gap: 4px;
+    }
+    .adm-btn-import:hover { opacity: .88; }
+    .info-banner {
+      background: #fff8e1; border: 1px solid #ffe082; border-radius: 9px;
+      padding: 11px 15px; margin-bottom: 18px; font-size: .82rem; color: #5d4037;
+      display: flex; align-items: flex-start; gap: 10px;
+    }
+    .info-banner b { display: block; margin-bottom: 3px; color: #3e2723; }
     /* PENGATURAN GRID */
     .set-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
     @media(max-width: 600px) { .set-grid, .f-row { grid-template-columns: 1fr; } }
@@ -313,6 +330,11 @@
         <button class="adm-tab" onclick="admTab('setting',this)">⚙️ Pengaturan</button>
       </div>
       <button class="adm-btn-lihat" onclick="closeAdmin()">👁️ Lihat Toko</button>
+      <button class="adm-btn-export" onclick="exportData()" title="Export semua data + foto ke file .json">📤 Export</button>
+      <label class="adm-btn-import" title="Import data dari file .json (pindah device)">
+        📥 Import
+        <input type="file" accept=".json" style="display:none" onchange="importData(this)">
+      </label>
       <button class="adm-btn-logout" onclick="doLogout()">🚪 Logout</button>
     </div>
   </div>
@@ -324,6 +346,14 @@
 
     <!-- ── TAB MENU ── -->
     <div id="admMenu" class="adm-sec show">
+      <div class="info-banner">
+        <span style="font-size:1.4rem">💡</span>
+        <div>
+          <b>Cara menyinkronkan foto ke device/browser lain:</b>
+          Klik <b>📤 Export</b> di atas untuk menyimpan semua data + foto ke file <code>.json</code>.
+          Lalu di device lain, klik <b>📥 Import</b> dan pilih file tersebut. Semua menu dan foto akan langsung muncul.
+        </div>
+      </div>
       <div class="adm-stats" id="admStats"></div>
       <div class="adm-card">
         <div class="adm-card-head">
@@ -552,45 +582,65 @@ function saveSetting(d){ localStorage.setItem('sbl_setting', JSON.stringify(d));
 function loadAdmin()   { try { return Object.assign({}, DEFAULT_ADMIN, JSON.parse(localStorage.getItem('sbl_admin'))); } catch(e){ return {...DEFAULT_ADMIN}; } }
 function saveAdmin(d)  { localStorage.setItem('sbl_admin', JSON.stringify(d)); }
 
-// IndexedDB untuk foto (ukuran besar)
-let db;
-function openDB() {
-  return new Promise((res, rej) => {
-    const r = indexedDB.open('SotoLukasDB', 2);
-    r.onupgradeneeded = e => {
-      const db = e.target.result;
-      if (!db.objectStoreNames.contains('photos')) db.createObjectStore('photos', {keyPath:'id'});
-    };
-    r.onsuccess  = e => res(e.target.result);
-    r.onerror    = e => rej(e.target.error);
-  });
-}
+// ═══════════════════════════════════════
+// FOTO — disimpan di localStorage agar
+// bisa dibawa ke device/browser lain
+// via fitur Export/Import
+// ═══════════════════════════════════════
+function loadFotos()   { try { return JSON.parse(localStorage.getItem('sbl_fotos')) || {}; } catch(e){ return {}; } }
+function saveFotos(d)  { try { localStorage.setItem('sbl_fotos', JSON.stringify(d)); } catch(e) { alert('⚠️ Storage penuh! Coba kompres ukuran foto terlebih dahulu.'); } }
 function saveFoto(id, dataURL) {
-  const tx = db.transaction('photos','readwrite');
-  tx.objectStore('photos').put({id, dataURL});
-}
-function loadFoto(id) {
-  return new Promise(res => {
-    const tx = db.transaction('photos','readonly');
-    const r  = tx.objectStore('photos').get(id);
-    r.onsuccess = e => res(e.target.result ? e.target.result.dataURL : null);
-    r.onerror   = () => res(null);
-  });
+  const all = loadFotos(); all[id] = dataURL; saveFotos(all);
 }
 function deleteFoto(id) {
-  const tx = db.transaction('photos','readwrite');
-  tx.objectStore('photos').delete(id);
+  const all = loadFotos(); delete all[id]; saveFotos(all);
 }
 
 // Cache foto di memori
 let fotoCache = {};
 
 async function loadAllFotos() {
-  const menus = loadMenu();
-  for (const m of menus) {
-    const f = await loadFoto(m.id);
-    if (f) fotoCache[m.id] = f;
-  }
+  fotoCache = loadFotos();
+}
+
+// ─── EXPORT semua data ───────────────────
+function exportData() {
+  const payload = {
+    v: 1,
+    menu:    loadMenu(),
+    setting: loadSetting(),
+    fotos:   loadFotos(),
+  };
+  const blob = new Blob([JSON.stringify(payload)], {type:'application/json'});
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url; a.download = 'sbl_backup_' + new Date().toISOString().slice(0,10) + '.json';
+  a.click(); URL.revokeObjectURL(url);
+  showAdmAlert('✅ Data berhasil di-export! Simpan file .json ini.', 'ok');
+}
+
+// ─── IMPORT data ────────────────────────
+function importData(input) {
+  const file = input.files[0]; if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const p = JSON.parse(e.target.result);
+      if (!p.menu || !p.setting) throw new Error('Format tidak valid');
+      if (!confirm(`Import data dari file:\n• ${p.menu.length} menu\n• ${Object.keys(p.fotos||{}).length} foto\n\nData yang ada sekarang akan digantikan. Lanjutkan?`)) return;
+      saveMenu(p.menu);
+      saveSetting(p.setting);
+      if (p.fotos) saveFotos(p.fotos);
+      fotoCache = p.fotos || {};
+      renderAdminMenu();
+      renderCustomer();
+      showAdmAlert('✅ Data berhasil di-import!', 'ok');
+    } catch(err) {
+      showAdmAlert('❌ File import tidak valid: ' + err.message, 'err');
+    }
+    input.value = '';
+  };
+  reader.readAsText(file);
 }
 
 // ═══════════════════════════════════════
@@ -967,12 +1017,10 @@ document.getElementById('modalMenu').addEventListener('click', e => {
 // ═══════════════════════════════════════
 // INISIALISASI
 // ═══════════════════════════════════════
-openDB().then(database => {
-  db = database;
-  return loadAllFotos();
-}).then(() => {
+(async () => {
+  await loadAllFotos();
   renderCustomer();
-});
+})();
 </script>
 </body>
 </html>
